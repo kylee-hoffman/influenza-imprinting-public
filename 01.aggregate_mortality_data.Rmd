@@ -1,0 +1,376 @@
+---
+title: "read NCHS data"
+output: html_document
+date: "2024-10-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(data.table)
+library(imprinting)
+library(lubridate)
+```
+
+```{r}
+# read in individual year data from https://www.nber.org/research/data/mortality-data-vital-statistics-nchs-multiple-cause-death-data
+read_nchs_csv_fun <- function(folder, COD, icd8_codes, icd9_codes, icd10_codes) {
+  pattern8 <- paste0("^(", paste(icd8_codes, collapse = "|"), ")")
+  pattern9 <- paste0("^(", paste(icd9_codes, collapse = "|"), ")")
+  pattern10 <- paste0("^(", paste(icd10_codes, collapse = "|"), ")")
+  
+  csv_files <- list.files(folder, pattern = "\\.csv$", full.names = TRUE)
+  
+  # list to hold years individually
+  df_list <- list()
+
+  for (file in csv_files) {
+    file_name <- tools::file_path_sans_ext(basename(file))
+    
+    df <- fread(file) %>%
+      mutate(year = as.numeric(str_extract(file_name, "\\d{4}"))) %>%
+      dplyr::select(c("year", "age", "sex", "race", "monthdth", "ucod"), starts_with("enicon_")) %>%
+      mutate(across(-c(year, age, monthdth), as.character))
+    
+    if (COD == "flu all COD") { # all 20 CODs, not just UCOD
+     df <- df %>%
+      unite(col = "cod", starts_with("enicon_"), sep = ", ", remove = FALSE) %>%
+      mutate(death = case_when(year %in% 1968:1978 & (str_detect(ucod, pattern8) | str_detect(cod, pattern8)) ~ 1,
+                             year %in% 1979:1998 & (str_detect(ucod, pattern9) | str_detect(cod, pattern9)) ~ 1,
+                             year %in% 1999:2021 & (str_detect(ucod, pattern10) | str_detect(cod, pattern10)) ~ 1,
+                             TRUE ~ 0))
+    } else if (COD == "all cause") {
+      df <- df %>% mutate(death = 1)
+    } else {
+      df <- df %>%
+      mutate(death = case_when(year %in% 1968:1978 & (str_detect(ucod, pattern8)) ~ 1,
+                                year %in% 1979:1998 & (str_detect(ucod, pattern9)) ~ 1,
+                                year %in% 1999:2022 & (str_detect(ucod, pattern10)) ~ 1,
+                                TRUE ~ 0))
+    }
+    
+    df <- df %>%
+      mutate(age = case_when(
+                  year >= 2003 ~ age - 1000, # different age classification style since 2003
+                  year < 2003 ~ age),
+             sex_recode = case_when(
+                  sex %in% c("1", "M") ~ "male",
+                  TRUE ~ "female"),
+            date = as.Date(paste0(year, "-", monthdth, "-01"))) %>%
+      filter(age < 200 & death == 1 & date >= as.Date("1968-09-01") & date <= as.Date("2021-08-01")) # 3 digit ages starting with 2 died at less than a year old and record month in the 2 last digits
+    
+    df <- df %>% 
+      mutate(season = case_when(
+          year == 1968 ~ "1968-1969",
+          monthdth >= 9 ~ paste0(year, "-", year+1),
+          TRUE ~ paste0(year-1, "-", year)),
+          birth_year = year - age)
+    
+    df$sex <- df$sex_recode
+    
+    df_list[[file_name]] <- df
+    
+    print(file) # check progress
+  }
+  
+  return(df_list)
+}
+```
+
+flu as any cause of death
+```{r}
+flu_deaths_list <- read_nchs_csv_fun("~/flu_imprinting/data/nchs_csv_data",
+                                         COD = "flu all COD",
+                                         icd8_codes = c(470:474),
+                                         icd9_codes = c(487:488),
+                                         icd10_codes = c("J09", paste0("J", 10:11))) # SLOW (~25 mins)
+
+flu_deaths_list <- lapply(flu_deaths_list, function(df) {
+    df %>% dplyr::select(all_of(c("year", "season", "age", "birth_year", "sex", "race", "ucod")))
+  })
+
+flu_deaths <- do.call(rbind, flu_deaths_list)
+
+# uncomment to run only when you're sure each year file makes sense. 
+# rm(flu_deaths_list)
+```
+
+```{r}
+# could apply 2x weights for 1972 data because its a 50% sample, but that has not been done
+flu_mx = flu_deaths %>%
+  group_by(birth_year, season) %>%
+  reframe(
+    flu_deaths = n()
+  )
+
+#rm(flu_deaths)
+```
+
+Flu as only UCOD
+```{r}
+# not used
+flu_ucod_list <- read_nchs_csv_fun("~/flu_imprinting/data/nchs_csv_data",
+                                         COD = "flu UCOD",
+                                         icd8_codes = c(470:474),
+                                         icd9_codes = c(487:488),
+                                         icd10_codes = c("J09", paste0("J", 10:11))) # SLOW
+
+flu_ucod_list <- lapply(flu_ucod_list, function(df) {
+    df %>% dplyr::select(all_of(c("year", "season", "age", "birth_year", "sex", "race", "ucod")))
+  })
+
+flu_ucod <- do.call(rbind, flu_ucod_list)
+
+flu_ucod_mx = flu_ucod %>%
+  group_by(birth_year, season) %>%
+  reframe(
+    flu_ucod = n()
+  )
+
+# rm(flu_ucod_list)
+# rm(flu_ucod)
+```
+
+Pancreatic cancer as UCOD
+```{r}
+pancreatic_cancer_deaths_list <- read_nchs_csv_fun("~/flu_imprinting/data/nchs_csv_data",
+                                                   COD = "pancreatic cancer",
+                                                   icd8_codes = 157,
+                                                   icd9_codes = 157,
+                                                   icd10_codes = "C25") # SLOW
+
+pancreatic_cancer_deaths_list <- lapply(pancreatic_cancer_deaths_list, function(df) {
+    df %>% dplyr::select(all_of(c("year", "season", "age", "birth_year", "sex", "race")))
+  })
+
+pancreatic_cancer_deaths <- do.call(rbind, pancreatic_cancer_deaths_list)
+
+pancreatic_cancer_mx <- pancreatic_cancer_deaths %>%
+  group_by(birth_year, season) %>%
+  reframe(
+    pancreatic_cancer_deaths = n()
+  )
+
+# uncomment to run only when you're sure each year file makes sense. 
+# rm(pancreatic_cancer_deaths_list)
+# rm(pancreatic_cancer_deaths)
+```
+
+
+All cause mortality
+```{r}
+all_deaths_list <- read_nchs_csv_fun("~/flu_imprinting/data/nchs_csv_data",
+                                                   COD = "all cause",
+                                                   icd8_codes = NULL,
+                                                   icd9_codes = NULL,
+                                                   icd10_codes = NULL) # SLOW
+
+all_deaths_list <- lapply(all_deaths_list, function(df) {
+    df %>% dplyr::select(all_of(c("year", "season", "age", "birth_year", "sex", "race")))
+})
+
+all_deaths <- do.call(rbind, all_deaths_list)
+
+# uncomment to run only when you're sure each year file makes sense. 
+# rm(all_deaths_list)
+```
+
+```{r}
+all_deaths_mx <- all_deaths %>%
+  group_by(birth_year, season) %>%
+  reframe(
+    all_deaths = n()
+  )
+
+# rm(all_deaths)
+```
+
+Exposure to make rates from counts
+```{r}
+exposure_fun <- function() {
+  # HMD exposure for mortality rates
+  exposure = fread("~/flu_imprinting/data/Exposures_1x1.txt", skip = 1) %>%
+    dplyr::select(c("Year", "Age", "Total", "Male", "Female")) %>%
+    filter(Age != "110+" & Year %in% 1967:2022)
+  
+  colnames(exposure) = tolower(colnames(exposure))
+  
+  exposure$age = as.numeric(exposure$age)
+  exposure$year = as.numeric(exposure$year)
+  
+  exposure = exposure %>%
+    mutate(birth_year = year - age) %>%
+    filter(birth_year != 1858 & birth_year <= 2020)
+  
+  monthly_exposure <- exposure %>%
+    mutate(date = as.Date(paste0(year, "-01-01"))) %>%
+    dplyr::select(-c("age")) %>%
+    group_by(birth_year) %>%
+    reframe(
+      month = seq(min(date), max(date), by = "month"), 
+      year = as.integer(format(month, format = "%Y")),
+      across(
+      .cols = c(total, male, female), 
+      .fns = ~ {
+        approx(date, .x, xout = month)$y
+      }))
+  
+  # season ranges from September to August. Pretty much just shifting exposure levels by 9 months
+  # there may be some benefit to uncommenting the code that would split the 2009 flu season differently
+  seasonal_exposure <- monthly_exposure %>%
+    filter(#case_when(
+      #year == 2009 ~ as.numeric(sapply(str_split(month, "-",  n = 3), `[`, 2)) == 5,
+      #TRUE ~ as.numeric(sapply(str_split(month, "-",  n = 3), `[`, 2)) == 9)) %>%
+      as.numeric(sapply(str_split(month, "-",  n = 3), `[`, 2)) == 9) %>%
+    mutate(season = paste0(year, "-", year+1)) %>%
+    dplyr::select(c("season", "total", "birth_year")) %>%
+    filter(season != "1967-1968")
+  
+  return(seasonal_exposure)
+}
+```
+
+```{r}
+seasonal_exposure <- exposure_fun()
+```
+
+
+Combine all data to one df to save as csv
+```{r}
+mx_data <- seasonal_exposure %>%
+  left_join(flu_mx, by=c("birth_year","season")) %>%
+  left_join(flu_ucod_mx, by=c("birth_year","season")) %>%
+  left_join(pancreatic_cancer_mx, by=c("birth_year","season")) %>%
+  left_join(all_deaths_mx, by=c("birth_year","season")) 
+
+# replace NA with 0 for age/year combos without a death
+mx_data$flu_deaths[is.na(mx_data$flu_deaths)] <- 0
+mx_data$flu_ucod[is.na(mx_data$flu_ucod)] <- 0
+mx_data$pancreatic_cancer_deaths[is.na(mx_data$pancreatic_cancer_deaths)] <- 0
+```
+
+```{r}
+# turn the counts into rates
+mx_data$flu_mx = mx_data$flu_deaths / mx_data$total
+mx_data$flu_ucod_mx = mx_data$flu_ucod / mx_data$total
+mx_data$pancreatic_cancer_mx = mx_data$pancreatic_cancer_deaths / mx_data$total
+mx_data$all_cause_mx = mx_data$all_deaths / mx_data$total
+
+# sort of useless. should just call log() on the rates when needed
+mx_data$log_flu_mx = log(mx_data$flu_mx)
+mx_data$log_flu_ucod_mx = log(mx_data$flu_ucod_mx)
+mx_data$log_pancreatic_cancer_mx = log(mx_data$pancreatic_cancer_mx)
+mx_data$log_all_cause_mx = log(mx_data$all_cause_mx)
+
+mx_data[sapply(mx_data, is.infinite)] <- NA
+```
+
+Flu strain data
+```{r}
+flu_strain_prominance_fun <- function() {
+  # Use data on subtype prevalence to determine prominent strain in a year
+  flu_strain = fread("~/flu_imprinting/data/VIW_FNT.csv") %>%
+    filter(COUNTRY_AREA_TERRITORY == "United States of America", ISO_YEAR <= 2022) %>%
+    dplyr::select(ISO_YEAR, ISO_WEEKSTARTDATE, AH1N12009, AH1, AH3, AH5, AH7N9)
+  
+  flu_strain[is.na(flu_strain)] <- 0
+
+  flu_strain <- flu_strain %>%
+    mutate(
+      year = as.numeric(substr(ISO_WEEKSTARTDATE, 1, 4)),
+      month = as.numeric(substr(ISO_WEEKSTARTDATE, 6, 7))
+    ) %>%
+    mutate(season = case_when(
+      #year == 2009 & month >= 4 ~ "2009-2010",
+      #year == 2009 & month < 4 ~ "2008-2009",
+      month >= 9 ~ paste0(year, "-", year+1),
+      TRUE ~ paste0(year-1, "-", year)
+    ))
+  
+  strain_season <- flu_strain %>%
+    group_by(season) %>%
+    summarise(
+      H1N1 = sum(AH1),
+      H1N1pdm09 = sum(AH1N12009),
+      H3N2 = sum(AH3)
+    )
+  
+  strain_season$H3N2_pct = strain_season$H3N2 / (strain_season$H3N2 + strain_season$H1N1 + strain_season$H1N1pdm09)
+  strain_season$H1N1_pct = strain_season$H1N1 / (strain_season$H3N2 + strain_season$H1N1 + strain_season$H1N1pdm09)
+  strain_season$H1N1pdm09_pct = strain_season$H1N1pdm09 / (strain_season$H3N2 + strain_season$H1N1 + strain_season$H1N1pdm09)
+  
+  strain_season = strain_season %>%
+      mutate(circulating_strain = case_when(
+        H3N2_pct >= 0.7 ~ "H3N2",
+        H1N1_pct >= 0.7 ~ "H1N1",
+        H1N1pdm09_pct >= 0.7 ~ "H1N1pdm09",
+        TRUE ~ "ambiguous"
+      )) %>%
+      dplyr::select(c("season", "circulating_strain"))
+
+  manual_flu_data <- fread("~/flu_imprinting/data/cdc_flu_surv.csv") %>%
+    dplyr::select(c("season", "circulating_strain"))
+  
+  strain_by_season <- rbind(strain_season, manual_flu_data)
+  
+  return(strain_by_season)
+}
+```
+
+```{r}
+strain_by_season <- flu_strain_prominance_fun()
+```
+
+imprinting probabilities
+```{r}
+imprint_probs <- get_imprinting_probabilities(observation_years = 1968:2022, countries = 'United States') %>%
+  dplyr::select(-c("country"))
+
+imprint_max_prob <- imprint_probs %>%
+  group_by(birth_year, year) %>%
+  filter(imprinting_prob == max(imprinting_prob)) %>%
+  mutate(subtype = case_when(
+    imprinting_prob < 0.7 & subtype != "naive" ~ "ambiguous",
+    TRUE ~ subtype
+  )) %>%
+  mutate(imprinted_strain = case_when(
+    birth_year %in% 1918:1920 & subtype == "A/H1N1" ~ "pH1N1",
+    birth_year %in% 1921:1933 & subtype == "A/H1N1" ~ "H1N1_alpha",
+    birth_year %in% 1934:1946 & subtype == "A/H1N1" ~ "H1N1_beta",
+    birth_year %in% 1947:1956 & subtype == "A/H1N1" ~ "H1N1_gamma",
+    birth_year %in% 1970:2008 & subtype == "A/H1N1" ~ "H1N1",
+    birth_year >= 2009 & subtype == "A/H1N1" ~ "H1N1pdm09",
+    subtype == "A/H2N2" ~ "H2N2",
+    subtype == "A/H3N2" ~ "H3N2",
+    TRUE ~ subtype
+  ))
+
+names(imprint_max_prob)[names(imprint_max_prob) == "year"] <- "year_recode"
+
+#write_csv(imprint_probs, "~/flu_imprinting/data/all_imprinting_probabilities.csv")
+#write_csv(imprint_max_prob, "~/flu_imprinting/data/imprinting_probability.csv")
+```
+
+```{r}
+mx_data$year_recode = as.numeric(sapply(str_split(mx_data$season, "-",  n = 2), `[`, 1)) # first year of season
+
+mx_data <- mx_data %>%
+  left_join(strain_by_season, by = "season") %>% 
+  left_join(imprint_max_prob[ , c("imprinted_strain", "birth_year", "year_recode")], by = c("birth_year", "year_recode"))
+```
+
+```{r}
+mx_data <- mx_data %>% 
+  mutate(imprinted_strain = case_when(
+    birth_year < 1918 ~ "ambiguous",
+    TRUE ~ imprinted_strain
+  ))
+```
+
+```{r}
+write_csv(mx_data, "~/flu_imprinting/data/combined_mx_data.csv")
+
+# rm(list = ls())
+```
+

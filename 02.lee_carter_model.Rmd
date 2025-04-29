@@ -1,0 +1,332 @@
+---
+title: "Lee Carter modeling"
+output: html_document
+date: "2024-10-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(data.table)
+library(ggpubr)
+#library(gsubfn)
+#library(zoo)
+#library(purrr)
+library(demography)
+library(StMoMo)
+```
+
+```{r}
+mx_data <- read_csv("~/flu_imprinting/data/combined_mx_data.csv", show_col_types = FALSE)
+
+mx_data$age_recode <- mx_data$year_recode - mx_data$birth_year
+```
+
+```{r}
+matrix_fun <- function(df, value, mat_type = NULL) {
+  X <- matrix(NA, nrow = length(0:108), ncol = length(1968:2020))
+  rownames(X) <- 0:108 # ages
+  colnames(X) <- 1968:2020 # years
+  
+  for (i in 1:nrow(df)) {
+    # match age/year
+    year_index <- which(colnames(X) == df$year_recode[i])
+    age_index <- which(rownames(X) == df$age_recode[i])
+    # fill the matrix
+    X[age_index, year_index] <- df[[value]][i]
+  }
+  
+  if (is.null(mat_type)) {
+    X <- X[ order(as.numeric(row.names(X))), ]
+  } else {
+    X <- X[ order(as.numeric(row.names(X))), ] #/ 100000
+  }
+  return(X)
+}
+```
+
+mx matrices and exposure matrix
+```{r}
+flu_mxs <- matrix_fun(mx_data, "flu_mx")
+
+flu_ucod_mxs <- matrix_fun(mx_data, "flu_ucod_mx")
+
+pancreatic_cancer_mxs <- matrix_fun(mx_data, "pancreatic_cancer_mx")
+
+all_cause_mxs <- matrix_fun(mx_data, "all_cause_mx")
+
+exposure <- matrix_fun(mx_data, "total", mat_type = "exposure")
+```
+
+maximum likelihood estimation? from StMoMo
+```{r}
+# convert mortality data to object suitable for the package
+flu_mx.dd <- demogdata(data = flu_mxs, pop = exposure, ages = 0:108, years = 1968:2020, 
+                       type = "mortality", label = "USA", name = "total")
+
+flu_mx.stmm <- StMoMoData(flu_mx.dd)
+```
+
+```{r}
+# initiate LC model object
+lcm <- lc(link = "log", const = "sum")
+
+# fit the model with the data
+lc_fit <- fit(lcm, data = flu_mx.stmm)
+```
+
+```{r}
+# extract the parameters. The package does confusing stuff so I opted to manually calculate log mx
+ax <- as.vector(lc_fit$ax)
+bx <- as.vector(lc_fit$bx)
+kt <- as.vector(lc_fit$kt)
+
+log_est_mat <- as.matrix(outer(bx, kt, FUN = "*") + ax)
+```
+
+```{r}
+# rename to pivot to long
+colnames(log_est_mat) <- colnames(exposure)
+rownames(log_est_mat) <- rownames(exposure)
+
+log_est_df <- as.data.frame(log_est_mat) %>%
+      mutate(age_recode = as.numeric(rownames(log_est_mat))) %>%
+      pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "log_flu_mx_est")
+```
+
+bootstrapping to get confidence intervals
+```{r}
+# this holds everything in lc_fit with the addition of bootstrapping to estimate CIs
+# SLOW (~30 mins). fitting 1600 bootstrapped samples to the model
+lc_boot <- StMoMo::bootstrap(lc_fit, nBoot = 1600, type = "semiparametric", deathType = "observed")
+```
+
+```{r}
+# use bootstrapped models to get CIs
+ax_vectors <- list()
+bx_vectors <- list()
+kt_vectors <- list()
+mx_matrices <- list()
+  
+for (i in 1:1600) {
+  ax_vectors[[i]] <- lc_boot$bootParameters[[i]]$ax
+  bx_vectors[[i]] <- as.vector(lc_boot$bootParameters[[i]]$bx)
+  kt_vectors[[i]] <- as.vector(lc_boot$bootParameters[[i]]$kt)
+    
+  mx_matrices[[i]] <- as.matrix(outer(bx_vectors[[i]], kt_vectors[[i]], FUN = "*") + ax_vectors[[i]])
+}
+  
+mx_boot_array <- array(unlist(mx_matrices), dim = c(109, 53, 50))
+
+# Compute the 2.5% and 97.5% quantiles for each cell across the 50 matrices
+lower_bound <- apply(mx_boot_array, c(1, 2), function(x) quantile(x, 0.025, na.rm = TRUE))
+upper_bound <- apply(mx_boot_array, c(1, 2), function(x) quantile(x, 0.975, na.rm = TRUE))
+```
+
+CIs for individual params
+```{r}
+ax_matrix <- do.call(cbind, ax_vectors)
+bx_matrix <- do.call(cbind, bx_vectors)  # 1 column = 1 iteration
+kt_matrix <- do.call(cbind, kt_vectors)
+
+lower_ax <- apply(ax_matrix, 1, quantile, 0.025, na.rm = TRUE)
+upper_ax <- apply(ax_matrix, 1, quantile, 0.975, na.rm = TRUE)
+
+lower_bx <- apply(bx_matrix, 1, quantile, 0.025, na.rm = TRUE)
+upper_bx <- apply(bx_matrix, 1, quantile, 0.975, na.rm = TRUE)
+
+lower_kt <- apply(kt_matrix, 1, quantile, 0.025, na.rm = TRUE)
+upper_kt <- apply(kt_matrix, 1, quantile, 0.975, na.rm = TRUE)
+```
+
+```{r}
+rownames(lower_bound) <- rownames(exposure)
+rownames(upper_bound) <- rownames(exposure)
+  
+colnames(lower_bound) <- colnames(exposure)
+colnames(upper_bound) <- colnames(exposure)
+
+log_mx_lower <- as.data.frame(lower_bound) %>%
+      mutate(age_recode = as.numeric(rownames(lower_bound))) %>%
+      pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "log_flu_mx_lower_CI")
+  
+log_mx_upper <- as.data.frame(upper_bound) %>%
+      mutate(age_recode = as.numeric(rownames(upper_bound))) %>%
+      pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "log_flu_mx_upper_CI")
+  
+log_mx_lower$year_recode <- as.numeric(log_mx_lower$year_recode)
+log_mx_upper$year_recode <- as.numeric(log_mx_upper$year_recode)
+log_est_df$year_recode <- as.numeric(log_est_df$year_recode)
+```
+
+Deviance residuals for lexis chart
+```{r}
+# deviance residuals for plotting
+residuals <- residuals(lc_fit)[["residuals"]]
+# errors when trying to initiate as data frame and pipe these together?
+residuals <- data.frame(residuals) %>%
+  mutate(age_recode = as.numeric(rownames(residuals))) %>%
+  pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "residuals") %>%
+  mutate(year_recode = as.numeric(sub("^X", "", year_recode)))
+```
+
+```{r}
+# finally merge everything together
+mx_data <- mx_data %>% 
+  left_join(log_mx_upper, by = c("age_recode", "year_recode")) %>% 
+  left_join(log_est_df, by = c("age_recode", "year_recode")) %>% 
+  left_join(log_mx_lower, by = c("age_recode", "year_recode")) %>% 
+  left_join(residuals, by = c("age_recode", "year_recode"))
+```
+
+```{r}
+ax.bx.df <- data.frame(age_recode = 0:108, ax = ax, ax_lower = lower_ax, ax_upper = upper_ax,
+                       bx = bx, bx_lower = lower_bx, bx_upper = upper_bx)
+
+kt.df <- data.frame(year_recode = 1968:2020, kt = kt, kt_lower = lower_kt, kt_upper = upper_kt)
+```
+
+```{r}
+write_csv(ax.bx.df, "~/flu_imprinting/data/lee_carter_age_params.csv")
+write_csv(kt.df, "~/flu_imprinting/data/lee_carter_kt.csv")
+```
+
+Pancreatic cancer
+maximum likelihood estimation from StMoMo
+```{r}
+# convert mortality data to object suitable for the package
+panc_mx.dd <- demogdata(data = pancreatic_cancer_mxs, pop = exposure, ages = 0:108, years = 1968:2020, 
+                       type = "mortality", label = "USA", name = "total")
+
+panc_mx.stmm <- StMoMoData(panc_mx.dd)
+```
+
+```{r}
+# initiate LC model object
+lcm <- lc(link = "log", const = "sum")
+
+# fit the model with the data
+lc_fit <- fit(lcm, data = panc_mx.stmm)
+```
+
+Deviance residuals
+```{r}
+# deviance residuals for plotting
+residuals <- residuals(lc_fit)[["residuals"]]
+# errors when trying to pipe these together?
+residuals <- data.frame(residuals) %>%
+  mutate(age_recode = as.numeric(rownames(residuals))) %>%
+  pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "pancreatic_residuals") %>%
+  mutate(year_recode = as.numeric(sub("^X", "", year_recode)))
+```
+
+```{r}
+# extract the parameters. The package does confusing stuff so I opted to manually calculate log mx
+ax <- as.vector(lc_fit$ax)
+bx <- as.vector(lc_fit$bx)
+kt <- as.vector(lc_fit$kt)
+
+log_est_mat <- as.matrix(outer(bx, kt, FUN = "*") + ax)
+```
+
+```{r}
+# rename to pivot to long
+colnames(log_est_mat) <- colnames(exposure)
+rownames(log_est_mat) <- rownames(exposure)
+
+log_est_df <- as.data.frame(log_est_mat) %>%
+      mutate(age_recode = as.numeric(rownames(log_est_mat))) %>%
+      pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "log_pancreatic_mx_est")
+```
+
+```{r}
+log_est_df$year_recode <- as.numeric(log_est_df$year_recode)
+
+mx_data <- mx_data %>% 
+  left_join(log_est_df, by = c("age_recode", "year_recode")) %>% 
+  left_join(residuals, by = c("age_recode", "year_recode"))
+```
+
+All cause
+maximum likelihood estimation from StMoMo
+```{r}
+# convert mortality data to object suitable for the package
+all_mx.dd <- demogdata(data = all_cause_mxs, pop = exposure, ages = 0:108, years = 1968:2020, 
+                       type = "mortality", label = "USA", name = "total")
+
+all_mx.stmm <- StMoMoData(all_mx.dd)
+```
+
+```{r}
+# initiate LC model object
+lcm <- lc(link = "log", const = "sum")
+
+# fit the model with the data
+lc_fit <- fit(lcm, data = all_mx.stmm)
+```
+
+Deviance residuals
+```{r}
+# deviance residuals for plotting
+residuals <- residuals(lc_fit)[["residuals"]]
+# errors when trying to pipe these together?
+residuals <- data.frame(residuals) %>%
+  mutate(age_recode = as.numeric(rownames(residuals))) %>%
+  pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "all_cause_residuals") %>%
+  mutate(year_recode = as.numeric(sub("^X", "", year_recode)))
+```
+
+```{r}
+# extract the parameters. The package does confusing stuff so I opted to manually calculate log mx
+ax <- as.vector(lc_fit$ax)
+bx <- as.vector(lc_fit$bx)
+kt <- as.vector(lc_fit$kt)
+
+log_est_mat <- as.matrix(outer(bx, kt, FUN = "*") + ax)
+```
+
+```{r}
+# rename to pivot to long
+colnames(log_est_mat) <- colnames(exposure)
+rownames(log_est_mat) <- rownames(exposure)
+
+log_est_df <- as.data.frame(log_est_mat) %>%
+      mutate(age_recode = as.numeric(rownames(log_est_mat))) %>%
+      pivot_longer(
+        cols = -age_recode,
+        names_to = "year_recode",
+        values_to = "log_all_cause_mx_est")
+```
+
+```{r}
+log_est_df$year_recode <- as.numeric(log_est_df$year_recode)
+
+mx_data <- mx_data %>% 
+  left_join(log_est_df, by = c("age_recode", "year_recode")) %>% 
+  left_join(residuals, by = c("age_recode", "year_recode"))
+```
+
+```{r}
+write_csv(mx_data, "~/flu_imprinting/data/mx_data_final.csv")
+```

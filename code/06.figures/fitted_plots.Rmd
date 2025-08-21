@@ -1,0 +1,278 @@
+---
+title: "Lee-Carter plots"
+author: "Kylee Hoffman"
+date: "2025-08-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(grid)
+library(ggpubr)
+library(tidyverse)
+library(data.table)
+library(scales)
+library(cowplot)
+```
+
+```{r}
+source("~/influenza-imprinting/influenza-imprinting-public/code/utils.R")
+load("~/influenza-imprinting/influenza-imprinting-public/data/final_panel_data.RData")
+```
+
+```{r}
+plot_data <- data %>% 
+    filter(imprinted_strain != "H1N1pdm09") %>% 
+    mutate(obs_flu_mx_p100k = ifelse(flu_mx == 0, NA, flu_mx * 100000),
+           imprinted_strain = ifelse(imprinted_strain == "naive" | imprinted_strain == "mixed", "mixed/naive",
+                                   imprinted_strain),
+           imprinted_strain = factor(imprinted_strain, levels = c("unknown", "pH1N1", "H1N1_alpha", "H1N1_beta",
+                                                                "H1N1_gamma", "H2N2", "H3N2", "mixed/naive"))) %>% 
+    group_by(year_recode) %>%
+    # min and max birth_years with non-NA points for each year
+    mutate(min_birth_year = min(birth_year[!is.na(obs_flu_mx_p100k)]),
+         max_birth_year = max(birth_year[!is.na(obs_flu_mx_p100k)]),
+    # Set estimates and CIs to NA outside the range of points for each year
+    fitted_flu_mx_p100k = if_else(birth_year < min_birth_year | birth_year > max_birth_year, NA,
+                                  flu_mx_fitted * 100000),
+    upper_flu_mx_p100k = if_else(birth_year < min_birth_year | birth_year > max_birth_year, NA,
+                                 flu_mx_upper * 100000),
+    lower_flu_mx_p100k = if_else(birth_year < min_birth_year | birth_year > max_birth_year, NA,
+                                 flu_mx_lower * 100000),
+    split_fitted_flu_mx_p100k = if_else(birth_year < min_birth_year | birth_year > max_birth_year, NA,
+                                  flu_mx_split_fitted * 100000)) %>%
+    ungroup()
+```
+
+2x2 plot of pre-2009 seasons
+```{r}
+p1 <- fitted_plot(data = plot_data, year = 1971, 
+                    x_breaks = seq(1970, 1850, by = -20), sec_axis_name = "Age",
+                    xlab = "", ylab = "Influenza deaths per 100,000",
+                    label_text = "1971-1972\nH3N2", label_x = 1955.25,
+                    margin = c(0, 0, -0.5, 0))
+
+p2 <- fitted_plot(data = plot_data, year = 1981, 
+                    x_breaks = seq(1980, 1860, by = -20), sec_axis_name = "Age",
+                    xlab = "", ylab = "", 
+                    label_text = "1981-1982\nInfluenza B", label_x = 1965,
+                    margin = c(0, 0, -0.5, 0))
+
+p3 <- fitted_plot(data = plot_data, year = 1990, 
+                    x_breaks = seq(1990, 1860, by = -20), sec_axis_name = "",
+                    xlab = "Birth year", ylab = "Influenza deaths per 100,000",
+                    label_text = "1990-1991\nNo dominant strain", label_x = 1964,
+                    margin = c(-0.5, 0, 0, 0))
+
+p4 <- fitted_plot(data = plot_data, year = 2000, 
+                    x_breaks = seq(2000, 1880, by = -20), sec_axis_name = "",
+                    xlab = "Birth year", ylab = "",
+                    label_text = "2000-2001\nH1N1", label_x = 1985,
+                    margin = c(-0.5, 0, 0, 0))
+
+grid1 <- ggarrange(p1, p2, p3, p4,
+                  ncol = 2, nrow = 2,
+                  common.legend = TRUE, legend = "right",
+                  widths = c(1, 1, 1),
+                  heights = c(1, 1, 1),
+                  font.label = list(size = 18, family = "Helvetica")) +
+  theme(plot.margin = unit(c(0, 0, 0.1, 0.1), "lines"))
+```
+
+```{r}
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/fig3_fits.png", 
+       plot = grid1, height = 6, width = 10, dpi = 800, bg='#ffffff')
+```
+
+
+
+2x2 plot of post-2009 seasons
+```{r}
+p5 <- fitted_plot(data = plot_data, year = 2009, 
+                    x_breaks = seq(2000, 1920, by = -20), sec_axis_name = "Age",
+                    xlab = "", ylab = "Influenza deaths per 100,000",
+                    label_text = "2009-2010\nH1N1pdm09", label_x = 1991,
+                    margin = c(0, 0, -0.5, 0))
+
+p6 <- fitted_plot(data = plot_data, year = 2011, 
+                    x_breaks = seq(2010, 1900, by = -20), sec_axis_name = "Age",
+                    xlab = "", ylab = "", 
+                    label_text = "2011-2012\nH3N2", label_x = 1996,
+                    margin = c(0, 0, -0.5, 0))
+
+p7 <- fitted_plot(data = plot_data, year = 2013, 
+                    x_breaks = seq(2010, 1900, by = -20), sec_axis_name = "",
+                    xlab = "Birth year", ylab = "Influenza deaths per 100,000",
+                    label_text = "2013-2014\nH1N1pdm09", label_x = 1995,
+                    margin = c(-0.5, 0, 0, 0))
+
+p8 <- fitted_plot(data = plot_data, year = 2018, 
+                    x_breaks = seq(2020, 2020 - 108, by = -20), sec_axis_name = "",
+                    xlab = "Birth year", ylab = "",
+                    label_text = "2018-2019\nNo dominant strain", label_x = 1992,
+                    margin = c(-0.5, 0, 0, 0))
+
+grid2 <- ggarrange(p5, p6, p7, p8,
+                  ncol = 2, nrow = 2,
+                  common.legend = TRUE, legend = "right",
+                  widths = c(1, 1, 1),
+                  heights = c(1, 1, 1),
+                  font.label = list(size = 18, family = "Helvetica")) +
+  theme(plot.margin = unit(c(0, 0, 0.1, 0.1), "lines"))
+```
+
+```{r}
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/fig4_fits.png", 
+       plot = grid2, height = 6, width = 10, dpi = 800, bg='#ffffff')
+```
+
+
+
+lee-carter plots for supplementary material
+```{r}
+arrange_plots(plot_data, 1968:1975, sigma = 0.1, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 1500),
+              "~/influenza-imprinting/plots/final_figs/LC_68-75.png")
+
+arrange_plots(plot_data, 1976:1983, sigma = 0.1, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+              "~/influenza-imprinting/plots/final_figs/LC_76-83.png")
+
+arrange_plots(plot_data, 1984:1991, sigma = 0.05, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+              "~/influenza-imprinting/plots/final_figs/LC_84-91.png")
+
+arrange_plots(plot_data, 1992:1999, sigma = 0.05, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+              "~/influenza-imprinting/plots/final_figs/LC_92-99.png")
+
+arrange_plots(plot_data, 2000:2007, sigma = 0.01, breaks = c(0, 0.1, 1, 10, 100), ylim = c(0, 500),
+              "~/influenza-imprinting/plots/final_figs/LC_00-07.png")
+
+arrange_plots(plot_data, 2008:2015, sigma = 0.05, breaks = c(0, 1, 10, 100), ylim = c(0, 600),
+              "~/influenza-imprinting/plots/final_figs/LC_08-15.png")
+
+arrange_plots(plot_data, 2016:2020, sigma = 0.025, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+              "~/influenza-imprinting/plots/final_figs/LC_16-20.png")
+```
+
+
+
+
+
+plots for other models
+```{r}
+load("~/influenza-imprinting/influenza-imprinting-public/data/APC_models.RData")
+```
+
+```{r}
+line_plot <- function(fitted_model, model_label, age_label = NULL, byr_label = NULL,
+                      y_axis_label = "Influenza deaths per 100,000", label_pos) {
+  
+  fitted_values_long(fitted_model) %>% 
+    merge(plot_data, by = c("age_recode", "year_recode")) %>% 
+    filter(year_recode == 2009) %>% 
+    group_by(year_recode) %>%
+    mutate(estimate_p100k = if_else(birth_year < min_birth_year | birth_year > max_birth_year, NA,
+                                    fitted_mx * 100000)) %>%
+    ungroup() %>% 
+    ggplot() +
+    geom_line(aes(x = birth_year, y = estimate_p100k), na.rm = TRUE) +
+    geom_point(aes(x = birth_year, y = obs_flu_mx_p100k, color = imprinted_strain), 
+               alpha = 0.6, size = 2, na.rm = TRUE) +
+    scale_color_manual(name = "Imprinted strain", 
+                       values = c(pH1N1 = "#ff6698", H1N1_alpha = "#b70000", H1N1_beta = "#ff8900", 
+                                   H1N1_gamma = "#ECC905", H2N2 = "#95C90F", H3N2 = "#3683C3", 
+                                   "mixed/naive" = "#989898", unknown = "#555"),
+                       labels = c("mixed/naive" = "Mixed/Naïve", unknown = "Unknown",
+                                   pH1N1 = bquote(pH1N1["\u03b1"]), H1N1_alpha = bquote(H1N1["\u03b1"]),
+                                   H1N1_beta = bquote(H1N1["\u03b2"]), H1N1_gamma = bquote(H1N1["\u03b3"])),
+                           guide = guide_legend(ncol = 1)) +
+        labs(x = byr_label, y = y_axis_label) +
+        scale_x_reverse(breaks = seq(2000, 1880, by = -20),
+                        sec.axis = sec_axis(transform = ~.,
+                                            breaks = seq(2009, 2009-108, by = -20),
+                                            labels = c(0, 20, 40, 60, 80, 100),
+                                            name = age_label)) +
+    scale_y_continuous(trans = pseudo_log_trans(base = 10, sigma = 0.2),
+                       breaks = c(0, 1, 10, 100)) +
+    theme_bw() +
+    theme(text = element_text(size=16, family = "Helvetica"),
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          axis.title=element_text(size=14)) +
+        coord_cartesian(ylim = c(0, 100)) +
+    annotate("label", x = label_pos, y = 70, label = model_label, size = 4.5)
+}
+```
+
+```{r}
+line_grid <- ggarrange(line_plot(APC_models$lc_fit, model_label = "Lee-Carter model", 
+                                 age_label = "Age", label_pos = 1979.5),
+                       line_plot(APC_models$cbd_fit, model_label = "Cairns-Blake-Dowd model", 
+                                 age_label = "Age", y_axis_label = NULL, label_pos = 1965),
+                       line_plot(APC_models$apc_fit, model_label = "Age-Period-Cohort model", 
+                                 label_pos = 1967),
+                       line_plot(APC_models$rh_fit, model_label = "Renshaw-Haberman model", 
+                                 y_axis_label = NULL, label_pos = 1964),
+                       line_plot(APC_models$m7_fit, model_label = "Extended CBD model", 
+                                 byr_label = "Birth year", label_pos = 1974), 
+                       line_plot(APC_models$plat_fit, model_label = "Plat model", byr_label = "Birth year", 
+                                 y_axis_label = NULL, label_pos = 1989.5),
+          ncol = 2, nrow = 3, common.legend = TRUE, legend = "right",
+  heights = c(1, 0.9, 1), widths = c(1, 0.925))
+```
+
+
+```{r}
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/supp_models_2009.png", 
+       plot = line_grid, height = 10, width = 9, dpi = 800, bg='#ffffff')
+```
+
+
+
+
+
+split years figure
+```{r}
+p <- plot_data %>% filter(year_recode == 2009) %>% ggplot() +
+  geom_line(aes(x = birth_year, y = split_fitted_flu_mx_p100k), na.rm = TRUE) +
+  geom_point(aes(x = birth_year, y = obs_flu_mx_p100k, color = imprinted_strain), 
+             alpha = 0.6, size = 2.25, na.rm = TRUE) +
+  scale_color_manual(name = "Imprinted strain", 
+                     values = c(unknown = "gray35", pH1N1 = "#ff6698", H1N1_alpha = "#b70000",H1N1_beta = "#ff8900", 
+                                H1N1_gamma = "#ECC905", H2N2 = "#95C90F", H3N2 = "#3683C3","mixed/naive" = "gray60"),
+                     labels = c("unknown" = "Unknown", "mixed/naive" = "Mixed/Naïve",
+                                pH1N1 = bquote(pH1N1["\u03b1"]), H1N1_alpha = bquote(H1N1["\u03b1"]),
+                                H1N1_beta = bquote(H1N1["\u03b2"]), H1N1_gamma = bquote(H1N1["\u03b3"]))) +
+  scale_x_reverse(breaks = seq(2000, 1920, by = -20), 
+                  sec.axis = sec_axis(transform = ~.,
+                                      breaks = seq(2009, 2009-108, by = -20),
+                                      labels = c(0, 20, 40, 60, 80, 100), 
+                                      name = "Age")) +
+  scale_y_continuous(trans = pseudo_log_trans(base = 10, sigma = 0.1),
+                     breaks = c(0, 1, 10, 100),
+                     labels = c(0, 1, 10, 100)) +
+  coord_cartesian(ylim = c(0, 200)) +
+  labs(x = "", y = "Influenza deaths per 100,000") +
+  theme_bw() +
+  theme(text = element_text(size=18, family = "Helvetica"),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(),
+        plot.margin=unit(c(0, 0, -0.5, 0),"lines"), axis.title=element_text(size=14)) +
+  annotate("label", x = 1991, y = 90, label = "2009-2010\nH1N1pdm09", size = 4.5)
+
+
+fig_split <- plot_residuals(data, data$residuals_split)
+
+
+grid <- ggarrange(fig_split, p,
+                  ncol = 1, nrow = 2,
+                  legend = "right",
+                  widths = c(1, 1),
+                  heights = c(1, 0.8),
+                  font.label = list(size = 18, family = "Helvetica")) +
+  theme(plot.margin = unit(c(0, 0, 0, 0.1), "lines"))
+
+
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/split_years_supp.png", 
+       plot = grid, height = 8, width = 6, bg='#ffffff', dpi = 800)
+```
+

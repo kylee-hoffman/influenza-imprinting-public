@@ -1,0 +1,158 @@
+---
+title: "stats"
+output: html_document
+date: "2024-10-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(data.table)
+library(broom)
+library(MASS)
+library(ggeffects)
+library(ggpubr)
+library(car)
+library(ggplot2)
+library(dplyr)
+library(performance)
+library(marginaleffects)
+library(sandwich)
+library(msm)
+#library(RSA)
+library(splines)
+library(emmeans)
+```
+
+```{r}
+source("~/influenza-imprinting/influenza-imprinting-public/code/utils.R")
+
+load("~/influenza-imprinting/influenza-imprinting-public/data/final_panel_data.RData")
+```
+
+```{r}
+reg_data <- data %>%
+  dplyr::select(season, imprinted_strain, flu_deaths, total, circulating_strain, age_recode, birth_year,
+                year_recode, H1N1_exposure, H3N2_exposure, H2N2_exposure, B_exposure) %>% 
+  filter(season != "2020-2021" & !(imprinted_strain %in% c("H1N1pdm09", "naive")) & age_recode > 0) %>% 
+  mutate(circulating_strain = factor(circulating_strain, 
+                                     levels = c("H3N2", "H1N1", "H1N1pdm09", "ambiguous", "B"),
+                                     labels = c("H3N2", "H1N1", "H1N1pdm09", "Ambiguous", "B")),
+         imprinted_strain = factor(imprinted_strain, 
+                                   levels = c("H3N2", "pH1N1", "H1N1_alpha", "H1N1_beta", "H1N1_gamma", 
+                                              "H2N2", "mixed", "naive", "unknown")),
+         season = factor(season),
+         circ_exposure = case_when(circulating_strain %in% c("H1N1", "H1N1pdm09") ~ H1N1_exposure,
+                                   circulating_strain == "H3N2" ~ H3N2_exposure,
+                                   circulating_strain == "Ambiguous" ~ 0,
+                                   circulating_strain == "B" ~ B_exposure))
+```
+
+
+```{r}
+#poisson_model <- glm(flu_deaths ~ circulating_strain*imprinted_strain + season + age_recode + offset(log(total)),
+#                     family = poisson(link = "log"),
+#                     data = reg_data)
+
+#check_overdispersion(poisson_model)
+#rm(poisson_model)
+```
+
+```{r}
+mod_imprinting <- glm.nb(flu_deaths ~ circulating_strain*imprinted_strain + season + 
+                           age_recode + offset(log(total)),
+                     data = reg_data)
+
+#options(max.print=100000)
+#summary(mod_imprinting)
+```
+
+
+```{r}
+mod_cumulative <- glm.nb(flu_deaths ~ circulating_strain*circ_exposure + offset(log(total)),
+                     data = reg_data)
+
+#summary(mod_cumulative)
+```
+
+
+```{r}
+mod_full <- glm.nb(flu_deaths ~ imprinted_strain*circulating_strain + 
+                      circulating_strain*circ_exposure + 
+                      age_recode + season + offset(log(total)),
+                  data = reg_data)
+
+#summary(mod_full)
+```
+
+
+```{r}
+vif(glm.nb(flu_deaths ~ circulating_strain + imprinted_strain + H1N1_exposure + H3N2_exposure + 
+             H2N2_exposure + age_recode + year_recode,
+                     data = reg_data))
+```
+
+
+age splines?
+```{r}
+test_splines <- lapply(3:8, function(df)
+  glm.nb(flu_deaths ~ imprinted_strain*circulating_strain +
+           circulating_strain*circ_exposure +
+           ns(age_recode, df = df) +
+           factor(season) + offset(log(total)),
+         data = reg_data))
+
+data.frame(df = 3:8, AIC = sapply(test_splines, AIC)) %>% arrange(AIC)
+# 8 is lowest
+```
+
+
+```{r}
+mod_spline <- glm.nb(flu_deaths ~ imprinted_strain*circulating_strain + 
+                      circulating_strain*circ_exposure + 
+                      ns(age_recode, df = 8) + season + offset(log(total)),
+                  data = reg_data)
+
+#summary(mod_spline)
+```
+
+
+
+```{r}
+aic.tab <- AIC(mod_imprinting, mod_cumulative, mod_full, mod_spline) %>% 
+  mutate(delta_AIC = AIC - min(AIC))
+```
+full model w/ splines is best
+
+
+```{r}
+pred <- predict_response(mod_spline,
+                 terms = c("circulating_strain", "imprinted_strain"),
+                 ci_level = 0.95,
+                 type = "count",
+                 interval = "confidence",
+                 condition = c(total = 100000)) %>%
+  dplyr::rename(circulating_strain = x, imprinted_strain = group) %>% 
+  data.frame() %>% 
+  mutate(imprinted_strain = factor(imprinted_strain, 
+                              levels = c("unknown", "pH1N1", "H1N1_alpha", "H1N1_beta", "H1N1_gamma", 
+                                         "H2N2", "H3N2", "mixed")),
+         circulating_strain = factor(circulating_strain,
+                                     levels = c("B", "Ambiguous", "H3N2", "H1N1", "H1N1pdm09")))
+```
+
+
+
+```{r}
+# incidence rate ratio table
+RR_tab <- rr_tab(mod_spline)
+```
+
+```{r}
+nb_model_data <- list(model = mod_spline, predictions = pred, RR_table = RR_tab, AIC_table = aic.tab)
+
+save(nb_model_data, file = "~/influenza-imprinting/influenza-imprinting-public/data/negbinom_model_data.RData")
+```
+
+

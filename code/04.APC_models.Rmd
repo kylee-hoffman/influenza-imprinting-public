@@ -1,0 +1,87 @@
+---
+title: "APC models"
+author: "Kylee Hoffman"
+date: "2025-08-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(data.table)
+library(demography)
+library(StMoMo)
+library(furrr)
+library(gmodels)
+library(scales)
+```
+
+```{r}
+source("~/influenza-imprinting/influenza-imprinting-public/code/utils.R")
+
+load("~/influenza-imprinting/influenza-imprinting-public/data/final_panel_data.RData")
+```
+
+```{r}
+# convert mortality data to object suitable for the package
+flu_mx.stmm <- StMoMoData(demogdata(data = matrix_fun(data, "flu_mx"), 
+                                    pop = matrix_fun(data, "total"),
+                                    ages = 0:108, years = 1968:2020, 
+                                    type = "mortality", label = "USA", name = "total"), type = "initial")
+```
+
+```{r}
+lc_fit <- fit(lc(link = "logit", const = "sum"), data = flu_mx.stmm)
+```
+
+"Fit a Renshaw and Haberman (Lee-Carter with cohorts) mortality model using the iterative Newton-Raphson procedure presented in Algorithm 1 of Hunt and Villegas (2015). This approach helps solve the well-known robustness and converges issues of the Lee-Carter model with cohort-effects."
+```{r}
+# setting cohortAgeFun = 1 excludes the secondary bx from modulating the cohort term by age
+rh_fit <- fit(rh(link = "logit", cohortAgeFun = 1), data = flu_mx.stmm)
+```
+
+```{r}
+apc_fit <- fit(apc(link = "logit"), data = flu_mx.stmm)
+```
+
+```{r}
+m7_fit <- fit(m7(link = "logit"), data = flu_mx.stmm)
+```
+
+```{r}
+cbd_fit <- fit(cbd(link = "logit"), data = flu_mx.stmm)
+```
+
+Plat model
+```{r}
+plat_fit <- fit(PLAT, data = flu_mx.stmm)
+```
+
+
+```{r}
+AIC <- AIC(lc_fit, cbd_fit, rh_fit, apc_fit, m7_fit, plat_fit) %>% 
+  mutate(delta_AIC = round((AIC - min(AIC)), 1))
+```
+
+
+```{r}
+APC_models <- list(lc_fit = lc_fit, cbd_fit = cbd_fit, rh_fit = rh_fit, 
+                   apc_fit = apc_fit, m7_fit = m7_fit, plat_fit = plat_fit, AIC = AIC)
+
+save(APC_models, file = "~/influenza-imprinting/influenza-imprinting-public/data/APC_models.RData")
+```
+
+
+
+
+
+```{r}
+data.frame(m7_fit$gc) %>% 
+  tibble::rownames_to_column("birth_year") %>% 
+  merge(data, by = "birth_year") %>% 
+  ggplot(aes(x = birth_year, y = m7_fit.gc, color = imprinted_strain)) +
+  geom_point()
+```
+
+
+

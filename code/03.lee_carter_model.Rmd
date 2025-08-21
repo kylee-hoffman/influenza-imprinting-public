@@ -1,0 +1,248 @@
+---
+title: "Lee Carter modeling"
+output: html_document
+date: "2024-10-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(data.table)
+library(demography)
+library(StMoMo)
+library(furrr)
+library(gmodels)
+```
+
+```{r}
+source("~/influenza-imprinting/influenza-imprinting-public/code/utils.R")
+
+load("~/influenza-imprinting/data/02.mortality_surveillance_data.RData")
+```
+
+
+fitting models using StMoMo
+```{r}
+# initiate LC model with logit link
+lcm <- lc(link = "logit", const = "sum")
+
+# age-specific seasonal exposure
+exposure <- matrix_fun(data, "total")
+```
+
+```{r}
+# convert mortality data to object suitable for the package
+flu_mx.stmm <- StMoMoData(demogdata(data = matrix_fun(data, "flu_mx"), 
+                                    pop = exposure,
+                                    ages = 0:108, years = 1968:2020, 
+                                    type = "mortality", label = "USA", name = "total"), 
+                          type = "initial")
+
+# fit the model with the data
+lc_fit <- fit(lcm, data = flu_mx.stmm)
+
+# fitted mortality rates
+mx <- fitted_values_long(lc_fit, type = "rates", col_name = "flu_mx_fitted")
+
+# death counts
+deaths <- fitted_values_long(lc_fit, type = "deaths", col_name = "flu_deaths_fitted")
+
+# deviance residuals
+residuals <- residuals_long(lc_fit, "flu_residuals")
+```
+
+
+sensitivity test: pancreatic cancer
+```{r}
+cancer_mx.stmm <- StMoMoData(demogdata(data = matrix_fun(data, "cancer_mx"), 
+                                       pop = exposure,
+                                       ages = 0:108, years = 1968:2020, 
+                                       type = "mortality", label = "USA", name = "total"), 
+                             type = "initial")
+
+lc_fit_cancer <- fit(lcm, data = cancer_mx.stmm)
+
+# fitted mortality rates
+mx_cancer <- fitted_values_long(lc_fit_cancer, type = "rates", col_name = "cancer_mx_fitted")
+
+# deviance residuals
+residuals_cancer <- residuals_long(lc_fit_cancer, "cancer_residuals")
+```
+
+
+
+sensitivity test: all cause mortality
+```{r}
+all_cause.stmm <- StMoMoData(demogdata(data = matrix_fun(data, "all_cause_mx"), 
+                                       pop = exposure,
+                                       ages = 0:108, years = 1968:2020, 
+                                       type = "mortality", label = "USA", name = "total"), 
+                             type = "initial")
+
+lc_fit_all <- fit(lcm, data = all_cause.stmm)
+
+# fitted mortality rates
+mx_all <- fitted_values_long(lc_fit_all, type = "rates", col_name = "all_cause_mx_fitted")
+
+# deviance residuals
+residuals_all <- residuals_long(lc_fit_all, "all_cause_residuals")
+```
+
+
+
+sensitivity test: influenza mortality where flu is listed as the UCOD
+```{r}
+ucod.stmm <- StMoMoData(demogdata(data = matrix_fun(data, "flu_ucod_mx"), 
+                                       pop = exposure,
+                                       ages = 0:108, years = 1968:2020, 
+                                       type = "mortality", label = "USA", name = "total"), 
+                             type = "initial")
+
+lc_fit_ucod <- fit(lcm, data = ucod.stmm)
+
+# fitted mortality rates
+mx_ucod <- fitted_values_long(lc_fit_ucod, type = "rates", col_name = "flu_ucod_mx_fitted")
+
+# deviance residuals
+residuals_ucod <- residuals_long(lc_fit_ucod, "flu_ucod_residuals")
+```
+
+
+
+sensitivity test: fit separate models for pre and post 2009
+```{r}
+exposure_pre <- matrix_fun(data %>% filter(year_recode <= 2008), col = "total", years = 1968:2008)
+
+flu_mx_pre.stmm <- StMoMoData(demogdata(data = matrix_fun(data %>% filter(year_recode <= 2008), 
+                                                          col = "flu_mx", years = 1968:2008), 
+                                        pop = exposure_pre,
+                                        ages = 0:108, years = 1968:2008, 
+                                        type = "mortality", label = "USA", name = "total"), 
+                             type = "initial")
+
+lc_fit_pre <- fit(lcm, data = flu_mx_pre.stmm)
+
+# fitted mortality rates
+mx_pre <- fitted_values_long(lc_fit_pre, type = "rates", col_name = "flu_mx_split_fitted")
+
+# deviance residuals
+residuals_pre <- residuals_long(lc_fit_pre, "flu_residuals_split")
+```
+
+```{r}
+exposure_post <- matrix_fun(data %>% filter(year_recode > 2008), col = "total", years = 2009:2020)
+
+flu_mx_post.stmm <- StMoMoData(demogdata(data = matrix_fun(data %>% filter(year_recode > 2008), 
+                                                          col = "flu_mx", years = 2009:2020), 
+                                        pop = exposure_post,
+                                        ages = 0:108, years = 2009:2020, 
+                                        type = "mortality", label = "USA", name = "total"), 
+                             type = "initial")
+
+lc_fit_post <- fit(lcm, data = flu_mx_post.stmm)
+
+# fitted mortality rates
+mx_post <- fitted_values_long(lc_fit_post, type = "rates", col_name = "flu_mx_split_fitted")
+
+# deviance residuals
+residuals_post <- residuals_long(lc_fit_post, "flu_residuals_split")
+```
+
+
+
+
+```{r}
+# fitting 1600 bootstrapped samples to the model to get confidence intervals
+# SLOW (~4 hours).
+lc_boot <- StMoMo::bootstrap(lc_fit, nBoot = 1600, type = "semiparametric")
+```
+
+```{r}
+# use bootstrapped parameters to get CIs for log mx
+ax_vectors <- list()
+bx_vectors <- list()
+kt_vectors <- list()
+mx_mats <- list()
+  
+for (i in 1:1600) {
+  ax_vectors[[i]] <- lc_boot$bootParameters[[i]]$ax
+  bx_vectors[[i]] <- as.vector(lc_boot$bootParameters[[i]]$bx)
+  kt_vectors[[i]] <- as.vector(lc_boot$bootParameters[[i]]$kt)
+    
+  mx_mats[[i]] <- as.matrix(outer(bx_vectors[[i]], kt_vectors[[i]], FUN = "*") + ax_vectors[[i]])
+}
+```
+
+
+```{r}
+# 2.5% and 97.5% quantiles for each cell across the matrices
+lower_bound <- array(unlist(mx_mats), dim = c(109, 53, 1600)) %>% 
+  apply(., c(1, 2), function(x) quantile(x, 0.025, na.rm = TRUE)) %>%
+  (\(mat) { dimnames(mat) <- dimnames(exposure); mat })() %>% 
+  as.data.frame() %>% 
+  tibble::rownames_to_column("age_recode") %>% 
+  pivot_longer(cols = -age_recode,
+               names_to = "year_recode",
+               values_to = "flu_mx_lower") %>% 
+  mutate(flu_mx_lower = exp(flu_mx_lower)) %>% 
+  mutate_if(is.character, as.numeric)
+
+upper_bound <- array(unlist(mx_mats), dim = c(109, 53, 1600)) %>% 
+  apply(., c(1, 2), function(x) quantile(x, 0.975, na.rm = TRUE)) %>% 
+  (\(mat) { dimnames(mat) <- dimnames(exposure); mat })() %>% 
+  as.data.frame() %>% 
+  tibble::rownames_to_column("age_recode") %>% 
+  pivot_longer(cols = -age_recode,
+               names_to = "year_recode",
+               values_to = "flu_mx_upper") %>% 
+  mutate(flu_mx_upper = exp(flu_mx_upper)) %>% 
+  mutate_if(is.character, as.numeric)
+```
+
+
+
+CIs for params
+```{r}
+ax.bx.df <- data.frame(age_recode = 0:108, 
+                       ax = as.vector(lc_fit$ax), 
+                       ax_lower = do.call(cbind, ax_vectors) %>% apply(., 1, quantile, 0.025, na.rm = TRUE),
+                       ax_upper = do.call(cbind, ax_vectors) %>% apply(., 1, quantile, 0.975, na.rm = TRUE),
+                       bx = as.vector(lc_fit$bx),
+                       bx_lower = do.call(cbind, bx_vectors) %>% apply(., 1, quantile, 0.025, na.rm = TRUE),
+                       bx_upper = do.call(cbind, bx_vectors) %>% apply(., 1, quantile, 0.975, na.rm = TRUE))
+
+kt.df <- data.frame(year_recode = 1968:2020, 
+                    kt = as.vector(lc_fit$kt),
+                    kt_lower = do.call(cbind, kt_vectors) %>% apply(., 1, quantile, 0.025, na.rm = TRUE),
+                    kt_upper = do.call(cbind, kt_vectors) %>% apply(., 1, quantile, 0.975, na.rm = TRUE))
+
+```
+
+```{r}
+lee_carter_parameters <- list(bootstrapped_params = lc_boot, ax_bx.df = ax.bx.df, kt.df = kt.df)
+
+save(lee_carter_parameters, 
+     file = "~/influenza-imprinting/influenza-imprinting-public/data/lee_carter_parameters.RData")
+```
+
+
+```{r}
+data <- data %>% 
+  left_join(mx, by = c("age_recode", "year_recode")) %>% 
+  left_join(deaths, by = c("age_recode", "year_recode")) %>% 
+  left_join(lower_bound, by = c("age_recode", "year_recode")) %>% 
+  left_join(upper_bound, by = c("age_recode", "year_recode")) %>% 
+  left_join(residuals, by = c("age_recode", "year_recode")) %>% 
+  left_join(mx_cancer, by = c("age_recode", "year_recode")) %>% 
+  left_join(residuals_cancer, by = c("age_recode", "year_recode")) %>% 
+  left_join(mx_all, by = c("age_recode", "year_recode")) %>% 
+  left_join(residuals_all, by = c("age_recode", "year_recode")) %>% 
+  left_join(mx_ucod, by = c("age_recode", "year_recode")) %>% 
+  left_join(residuals_ucod, by = c("age_recode", "year_recode")) %>% 
+  merge(rbind(mx_pre, mx_post), by = c("age_recode", "year_recode")) %>% 
+  merge(rbind(residuals_pre, residuals_post), by = c("age_recode", "year_recode"))
+```
+
+```{r}
+save(data, file = "~/influenza-imprinting/influenza-imprinting-public/data/final_panel_data.RData")
+```

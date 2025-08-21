@@ -1,0 +1,214 @@
+---
+title: "residual plots"
+author: "Kylee Hoffman"
+date: "2025-08-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(grid)
+library(ggpubr)
+library(tidyverse)
+library(data.table)
+library(scales)
+library(cowplot)
+```
+
+
+```{r}
+source("~/influenza-imprinting/influenza-imprinting-public/code/utils.R")
+load("~/influenza-imprinting/influenza-imprinting-public/data/final_panel_data.RData")
+```
+
+
+```{r}
+fig_res <- plot_residuals(data, data$flu_residuals)
+
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/flu_resids_revision.png", 
+       plot = fig_res, height = 6, width = 8, bg='#ffffff', dpi = 800)
+```
+
+a different style
+```{r}
+diags <- data.frame(cohort = seq(1870, 2010, by = 10),
+                       x = c(rep(1967.5, 10), seq(1969.5, 2009.5, by = 10)),
+                       y = c(seq(97.5, 7.5, by = -10), rep(-0.5, 5)),
+                       xend = c(seq(1978.5, 2018.5, by = 10), rep(2020.5, 10)),
+                       yend = c(rep(108.5, 5), seq(100.5, 10.5, by = -10)))
+
+fig=ggplot(data, aes(x = year_recode, y = age_recode, fill = flu_residuals)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "darkblue", mid = "white", high = "red", midpoint = 0, 
+                       na.value = "transparent", name = "Excess \nmortality", 
+                       limits = c(-5.2, 5.2)) +
+  labs(x = "Influenza season", y = "Age", tag = "Lower\nmortality") +
+  theme_bw(base_size = 15) + 
+  theme(axis.text.x.bottom = element_text(size = 15),
+        axis.text.x.top = element_text(angle = 24, size = 12, vjust = -0.1, hjust = 0.1, color = "black"), 
+        axis.text.y = element_text(size = 15),
+        text = element_text(size = 15, family = "Helvetica"),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth=0.5),
+        plot.tag.position = c(0.8625, 0.34), plot.tag = element_text(hjust = 0, size = 15),
+        plot.margin = unit(c(2.5, 0.5, 0.1, 0.2), "lines"),
+        legend.margin=margin(l = 2, unit="lines"),
+        legend.background = element_rect(color = NA, fill = NA)) +
+  scale_x_continuous(expand = c(0, 0), breaks = seq(1970, 2020, by = 10)) +
+  scale_y_continuous(expand = c(0, 0), breaks = seq(0, 100, by = 10)) +
+  annotate("text", x = rep(2020, 3), y = c(100, 80, 60), label = c("1920", "1940", "1960"), 
+           angle = 30, size = 5, vjust = 0.25, hjust = -0.25) +
+  annotate("text", x = c(1988, 2008), y = rep(108, 2), label = c("1880", "1900"), 
+           angle = 30, size = 5, vjust = 0.25, hjust = -0.25) +
+  annotate("text", x = 2020, y = 108, label = "cohort", fontface = "bold",
+           angle = 30, size = 5, hjust = -0.15) +
+  coord_cartesian(clip = "off") +
+  geom_segment(data = diags,
+             aes(x = x, y = y, xend = xend, yend = yend),
+             inherit.aes = FALSE,
+             color = "black", linetype = "dotted",
+             linewidth = 0.5, alpha = 0.7)
+
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/flu_resids_style2.png", 
+       plot = fig, height = 6, width = 6, bg='#ffffff', dpi = 800)
+```
+
+```{r}
+fig_cancer <- plot_residuals(data, data$cancer_residuals, limits = c(-6.6, 6.6))
+
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/cancer_resids_revision.png", 
+       plot = fig_cancer, height = 6, width = 8, bg='#ffffff', dpi = 800)
+```
+
+```{r}
+fig_all <- plot_residuals(data, data$all_cause_residuals, limits = c(-5.6, 5.6))
+
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/all_cause_resids_revision.png", 
+       plot = fig_all, height = 6, width = 8, bg='#ffffff', dpi = 800)
+```
+
+
+
+residuals for other models
+```{r}
+load("~/influenza-imprinting/influenza-imprinting-public/data/APC_models.RData")
+```
+
+```{r}
+resid_plot <- function(fitted_model, model_title) {
+  residuals_long(fitted_model) %>% 
+    ggplot(aes(x = year_recode, y = age_recode, fill = residuals)) +
+    geom_tile() +
+    scale_x_continuous(expand = c(0, 0), breaks = seq(1970, 2020, by = 5)) + 
+    scale_y_continuous(expand = c(0, 0), breaks = seq(0, 100, by = 10)) +
+    scale_fill_gradient2(low = "darkblue", mid = "white", high = "red", midpoint = 0, 
+                         na.value = "transparent", limits = c(-5.5, 5.5)) +
+    labs(x = "Influenza season", y = "Age", title = model_title) +
+    theme_minimal(base_size = 15, base_family = "Helvetica") +
+    theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 15),
+          axis.text.y = element_text(size = 15),
+          panel.border = element_rect(color = "black", fill=NA, linewidth=1),
+          plot.margin=unit(c(0.2, 0.2, 0.2, 0.2),"lines"))
+}
+```
+
+```{r}
+resid_grid <- ggarrange(resid_plot(APC_models$lc_fit, "Lee-Carter model"), 
+                        resid_plot(APC_models$cbd_fit, "Cairns-Blake-Dowd model"),
+                        resid_plot(APC_models$apc_fit, "APC model"), 
+                        resid_plot(APC_models$rh_fit, "Renshaw-Haberman model"),
+                        resid_plot(APC_models$m7_fit, "Extended CBD model"), 
+                        resid_plot(APC_models$plat_fit, "Plat model"),
+          ncol = 2, nrow = 3, common.legend = TRUE, legend = "right")
+```
+
+```{r}
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/supp_resids.png", 
+       plot = resid_grid, height = 10, width = 9, dpi = 800, bg='#ffffff')
+```
+
+
+A slightly more informative version
+```{r}
+diags <- data.frame(cohort = seq(1870, 2010, by = 10),
+                       x = c(rep(1967.5, 10), seq(1969.5, 2009.5, by = 10)),
+                       y = c(seq(97.5, 7.5, by = -10), rep(-0.5, 5)),
+                       xend = c(seq(1978.5, 2018.5, by = 10), rep(2020.5, 10)),
+                       yend = c(rep(108.5, 5), seq(100.5, 10.5, by = -10)))
+
+fig <- ggplot(data, aes(x = year_recode, y = age_recode, fill = flu_residuals)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "darkblue", mid = "white", high = "red", midpoint = 0, 
+                       na.value = "transparent", name = "Excess \nmortality", 
+                       limits = c(-5.2, 5.2)) +
+  labs(x = "Influenza season", y = "Age", tag = "Lower\nmortality") +
+  theme_bw(base_size = 15) + 
+  theme(axis.text.x.bottom = element_text(size = 15),
+        axis.text.x.top = element_text(angle = 24, size = 12, vjust = -0.1, hjust = 0.1, color = "black"), 
+        axis.text.y = element_text(size = 15),
+        text = element_text(size = 15, family = "Helvetica"),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth=0.5),
+        plot.tag.position = c(0.8625, 0.34), plot.tag = element_text(hjust = 0, size = 15),
+        plot.margin = unit(c(2.5, 0.5, 0.1, 0.2), "lines"),
+        legend.margin=margin(l = 2, unit="lines"),
+        legend.background = element_rect(color = NA, fill = NA)) +
+  scale_x_continuous(expand = c(0, 0), breaks = seq(1970, 2020, by = 10)) +
+  scale_y_continuous(expand = c(0, 0), breaks = seq(0, 100, by = 10)) +
+  annotate("text", x = rep(2020, 3), y = c(100, 80, 60), label = c("1920", "1940", "1960"), 
+           angle = 30, size = 5, vjust = 0.25, hjust = -0.25) +
+  annotate("text", x = c(1988, 2008), y = rep(108, 2), label = c("1880", "1900"), 
+           angle = 30, size = 5, vjust = 0.25, hjust = -0.25) +
+  annotate("text", x = 2020, y = 108, label = "cohort", fontface = "bold",
+           angle = 30, size = 5, hjust = -0.15) +
+  coord_cartesian(clip = "off") +
+  geom_segment(data = diags,
+             aes(x = x, y = y, xend = xend, yend = yend),
+             inherit.aes = FALSE,
+             color = "black", linetype = "dotted",
+             linewidth = 0.5, alpha = 0.7)
+
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/flu_resids_style2.png", 
+       plot = fig, height = 6, width = 6, bg='#ffffff', dpi = 800)
+```
+
+
+
+
+```{r}
+diags2 <- data.frame(cohort = c(1900, 1918, 1934, 1947),
+                       x = rep(1967.5, 4),
+                       y = c(68, 50, 34, 21),
+                       xend = c(2008, 2020.5, 2020.5, 2020.5),
+                       yend = c(108, 102.5, 86.5, 73.5))
+
+ggplot(data, aes(x = year_recode, y = age_recode, fill = all_cause_residuals)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "darkblue", mid = "white", high = "red", midpoint = 0, 
+                       na.value = "transparent", name = "Excess \nmortality", 
+                       limits = c(-5.6, 5.6)) +
+  labs(x = "Influenza season", y = "Age", tag = "Lower\nmortality") +
+  theme_minimal(base_size = 15) + 
+  theme(axis.text.x.bottom = element_text(angle = 50, hjust = 1.1, vjust = 1.25, size = 15),
+        axis.text.x.top = element_text(angle = 24, size = 12, vjust = -0.1, 
+                                       hjust = 0.1, color = "black"), 
+        axis.text.y = element_text(size = 15),
+        text = element_text(size = 15, family = "Helvetica"),
+        panel.border = element_rect(colour = "black", fill=NA, linewidth=0.5),
+        plot.tag.position = c(0.8875, 0.375), plot.tag = element_text(hjust = 0, size = 15),
+        plot.margin = unit(c(1.5, 0.5, 0.1, 0.2), "lines"),
+        legend.margin=margin(l = 2, unit="lines"),
+        legend.ticks.length = unit(-0.15, 'cm')) +
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = seq(1970, 2020, by = 5),
+                     labels = seq(1970, 2020, by = 5)) +
+  scale_y_continuous(expand = c(0, 0), breaks = seq(0, 100, by = 10)) +
+  
+  annotate("text", x = rep(2020, 3), y = c(102, 86, 73), label = c("1918", "1933", "1947"), 
+           angle = 24, size = 4.15, vjust = 0.5, hjust = -0.35) +
+  coord_cartesian(clip = "off") +
+  geom_segment(data = diags2,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               inherit.aes = FALSE,
+               color = "black", linetype = "dotted",
+               linewidth = 0.5, alpha = 0.7)
+```

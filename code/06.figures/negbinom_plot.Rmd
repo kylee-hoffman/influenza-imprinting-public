@@ -1,0 +1,65 @@
+---
+title: "regression figure"
+author: "Kylee Hoffman"
+date: "2025-08-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(grid)
+library(ggpubr)
+library(tidyverse)
+library(data.table)
+library(scales)
+library(cowplot)
+```
+
+negative binomial model predictions
+```{r cars}
+source("~/influenza-imprinting/influenza-imprinting-public/code/utils.R")
+
+load("~/influenza-imprinting/influenza-imprinting-public/data/negbinom_model_data.RData")
+```
+
+```{r}
+fig_pred <- nb_model_data$predictions %>% 
+  ggplot(aes(circulating_strain, predicted, color = imprinted_strain)) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), position = position_dodge(width=0.65), 
+                  size = 0.4) +
+  scale_y_log10() +
+  scale_color_manual(name = "Imprinted strain",
+                     values = c(pH1N1 = "#ff6698",
+                                H1N1_alpha = "#b70000", 
+                                H1N1_beta = "#ff8900", 
+                                H1N1_gamma = "#ECC905", 
+                                H2N2 = "#95C90F", 
+                                H3N2 = "#3683C3",
+                                H3N2_oldest = "#299999",
+                                H3N2_youngest = "#100999",
+                                mixed = "#989898",
+                                unknown = "#555"),
+                     labels = c(mixed = "Mixed",
+                                unknown = "Unknown",
+                                pH1N1 = bquote(pH1N1["\u03b1"]  ),
+                                H1N1_alpha = bquote(H1N1["\u03b1"]),
+                                     H1N1_beta = bquote(H1N1["\u03b2"]),
+                                     H1N1_gamma = bquote(H1N1["\u03b3"]))) +
+  theme_bw() +
+  labs(x = "Circulating strain", y = "Adjusted influenza deaths per 100,000") +
+  theme(legend.title = element_text(size = 14, color = "black"),
+      legend.text = element_text(color = "black"),
+      axis.text = element_text(color = "black"), axis.title = element_text(color = "black"),
+      text = element_text(size = 16, family = "Helvetica", color = "black"),
+      plot.margin = unit(c(0.75, 0.25, 0.25, 0.25), "lines"),
+      panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+      panel.background = element_blank())
+
+```
+
+```{r}
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/negbinom_plot.png", 
+       plot = fig_pred, height = 5, width = 9, dpi = 800, bg='#ffffff')
+```
+

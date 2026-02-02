@@ -59,7 +59,7 @@ fig_pred <- nb_model_data$predictions %>%
 ```
 
 ```{r}
-ggsave(filename = "~/influenza-imprinting/plots/final_figs/negbinom_plot.png", 
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/negbinom_fig6.png", 
        plot = fig_pred, height = 5, width = 9, dpi = 800, bg='#ffffff')
 ```
 

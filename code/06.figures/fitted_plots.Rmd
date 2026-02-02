@@ -46,30 +46,32 @@ plot_data <- data %>%
     ungroup()
 ```
 
+
 2x2 plot of pre-2009 seasons
 ```{r}
 p1 <- fitted_plot(data = plot_data, year = 1971, 
-                    x_breaks = seq(1970, 1850, by = -20), sec_axis_name = "Age",
+                    x_breaks = seq(1970, 1850, by = -20), ylim = c(0.01, 400), 
+                  sec_axis_name = "Age",
                     xlab = "", ylab = "Influenza deaths per 100,000",
-                    label_text = "1971-1972\nH3N2", label_x = 1955.25,
+                    label_text = "1971-1972\nH3N2", label_x = 1955.25, label_y = 140,
                     margin = c(0, 0, -0.5, 0))
 
 p2 <- fitted_plot(data = plot_data, year = 1981, 
-                    x_breaks = seq(1980, 1860, by = -20), sec_axis_name = "Age",
+                    x_breaks = seq(1980, 1860, by = -20), ylim = c(0.01, 400), sec_axis_name = "Age",
                     xlab = "", ylab = "", 
-                    label_text = "1981-1982\nInfluenza B", label_x = 1965,
+                    label_text = "1981-1982\nInfluenza B", label_x = 1965, label_y = 140,
                     margin = c(0, 0, -0.5, 0))
 
 p3 <- fitted_plot(data = plot_data, year = 1990, 
-                    x_breaks = seq(1990, 1860, by = -20), sec_axis_name = "",
+                    x_breaks = seq(1990, 1860, by = -20), ylim = c(0.01, 400), sec_axis_name = "",
                     xlab = "Birth year", ylab = "Influenza deaths per 100,000",
-                    label_text = "1990-1991\nNo dominant strain", label_x = 1964,
+                    label_text = "1990-1991\nNo dominant strain", label_x = 1964, label_y = 140,
                     margin = c(-0.5, 0, 0, 0))
 
 p4 <- fitted_plot(data = plot_data, year = 2000, 
-                    x_breaks = seq(2000, 1880, by = -20), sec_axis_name = "",
+                    x_breaks = seq(2000, 1880, by = -20), ylim = c(0.01, 400), sec_axis_name = "",
                     xlab = "Birth year", ylab = "",
-                    label_text = "2000-2001\nH1N1", label_x = 1985,
+                    label_text = "2000-2001\nH1N1", label_x = 1985, label_y = 140,
                     margin = c(-0.5, 0, 0, 0))
 
 grid1 <- ggarrange(p1, p2, p3, p4,
@@ -82,8 +84,8 @@ grid1 <- ggarrange(p1, p2, p3, p4,
 ```
 
 ```{r}
-ggsave(filename = "~/influenza-imprinting/plots/final_figs/fig3_fits.png", 
-       plot = grid1, height = 6, width = 10, dpi = 800, bg='#ffffff')
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/fits_fig4_v2.png", 
+       plot = grid1, height = 7, width = 10, dpi = 800, bg='#ffffff')
 ```
 
 
@@ -91,27 +93,27 @@ ggsave(filename = "~/influenza-imprinting/plots/final_figs/fig3_fits.png",
 2x2 plot of post-2009 seasons
 ```{r}
 p5 <- fitted_plot(data = plot_data, year = 2009, 
-                    x_breaks = seq(2000, 1920, by = -20), sec_axis_name = "Age",
+                    x_breaks = seq(2000, 1920, by = -20), ylim = c(0.0125, 180), sec_axis_name = "Age",
                     xlab = "", ylab = "Influenza deaths per 100,000",
-                    label_text = "2009-2010\nH1N1pdm09", label_x = 1991,
+                    label_text = "2009-2010\nH1N1pdm09", label_x = 1991, label_y = 70,
                     margin = c(0, 0, -0.5, 0))
 
 p6 <- fitted_plot(data = plot_data, year = 2011, 
-                    x_breaks = seq(2010, 1900, by = -20), sec_axis_name = "Age",
+                    x_breaks = seq(2010, 1900, by = -20), ylim = c(0.0125, 180), sec_axis_name = "Age",
                     xlab = "", ylab = "", 
-                    label_text = "2011-2012\nH3N2", label_x = 1996,
+                    label_text = "2011-2012\nH3N2", label_x = 1996, label_y = 70,
                     margin = c(0, 0, -0.5, 0))
 
 p7 <- fitted_plot(data = plot_data, year = 2013, 
-                    x_breaks = seq(2010, 1900, by = -20), sec_axis_name = "",
+                    x_breaks = seq(2010, 1900, by = -20), ylim = c(0.0125, 180), sec_axis_name = "",
                     xlab = "Birth year", ylab = "Influenza deaths per 100,000",
-                    label_text = "2013-2014\nH1N1pdm09", label_x = 1995,
+                    label_text = "2013-2014\nH1N1pdm09", label_x = 1995, label_y = 70,
                     margin = c(-0.5, 0, 0, 0))
 
 p8 <- fitted_plot(data = plot_data, year = 2018, 
-                    x_breaks = seq(2020, 2020 - 108, by = -20), sec_axis_name = "",
+                    x_breaks = seq(2020, 2020 - 108, by = -20), ylim = c(0.0125, 180), sec_axis_name = "",
                     xlab = "Birth year", ylab = "",
-                    label_text = "2018-2019\nNo dominant strain", label_x = 1992,
+                    label_text = "2018-2019\nNo dominant strain", label_x = 1992, label_y = 70,
                     margin = c(-0.5, 0, 0, 0))
 
 grid2 <- ggarrange(p5, p6, p7, p8,
@@ -124,33 +126,42 @@ grid2 <- ggarrange(p5, p6, p7, p8,
 ```
 
 ```{r}
-ggsave(filename = "~/influenza-imprinting/plots/final_figs/fig4_fits.png", 
-       plot = grid2, height = 6, width = 10, dpi = 800, bg='#ffffff')
+ggsave(filename = "~/influenza-imprinting/plots/final_figs/fits_fig5_v2.png", 
+       plot = grid2, height = 7, width = 10, dpi = 800, bg='#ffffff')
 ```
+
 
 
 
 lee-carter plots for supplementary material
 ```{r}
-arrange_plots(plot_data, 1968:1975, sigma = 0.1, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 1500),
+arrange_plots(plot_data, 1968:1975, sigma = 0.005, breaks = c(0.01, 0.1, 1, 10, 100, 1000),
+              labels = c("0.01", "0.10", "1.00", "10.0", "100", "1000"), ylim = c(0.03, 800),
               "~/influenza-imprinting/plots/final_figs/LC_68-75.png")
 
-arrange_plots(plot_data, 1976:1983, sigma = 0.1, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+arrange_plots(plot_data, 1976:1983, sigma = 0.005, breaks = c(0.01, 0.1, 1, 10, 100, 1000),
+              labels = c("0.01", "0.10", "1.00", "10.0", "100", "1000"), ylim = c(0.01, 700),
               "~/influenza-imprinting/plots/final_figs/LC_76-83.png")
 
-arrange_plots(plot_data, 1984:1991, sigma = 0.05, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+arrange_plots(plot_data, 1984:1991, sigma = 0.005, breaks = c(0.01, 0.1, 1, 10, 100, 1000),
+              labels = c("0.01", "0.10", "1.00", "10.0", "100", "1000"), ylim = c(0.01, 700),
               "~/influenza-imprinting/plots/final_figs/LC_84-91.png")
 
-arrange_plots(plot_data, 1992:1999, sigma = 0.05, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+arrange_plots(plot_data, 1992:1999, sigma = 0.005, breaks = c(0.01, 0.1, 1, 10, 100),
+              labels = c("0.01", "0.10", "1.00", "10.0", "100"), ylim = c(0.01, 570),
               "~/influenza-imprinting/plots/final_figs/LC_92-99.png")
 
-arrange_plots(plot_data, 2000:2007, sigma = 0.01, breaks = c(0, 0.1, 1, 10, 100), ylim = c(0, 500),
+arrange_plots(plot_data, 2000:2007, sigma = 0.005, breaks = c(0.01, 0.1, 1, 10, 100),
+              labels = c("0.01", "0.10", "1.00", "10.0", "100"), ylim = c(0.01, 300),
               "~/influenza-imprinting/plots/final_figs/LC_00-07.png")
 
-arrange_plots(plot_data, 2008:2015, sigma = 0.05, breaks = c(0, 1, 10, 100), ylim = c(0, 600),
+arrange_plots(plot_data, 2008:2015, sigma = 0.005, 
+              breaks = c(0.01, 0.1, 1, 10, 100),
+              labels = c("0.01", "0.10", "1.00", "10.0", "100"), ylim = c(0.01, 300),
               "~/influenza-imprinting/plots/final_figs/LC_08-15.png")
 
-arrange_plots(plot_data, 2016:2020, sigma = 0.025, breaks = c(0, 1, 10, 100, 1000), ylim = c(0, 900),
+arrange_plots(plot_data, 2016:2020, sigma = 0.005, breaks = c(0.01, 0.1, 1, 10, 100),
+              labels = c("0.01", "0.10", "1.00", "10.0", "100"), ylim = c(0.01, 500),
               "~/influenza-imprinting/plots/final_figs/LC_16-20.png")
 ```
 

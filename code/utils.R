@@ -169,7 +169,7 @@ rr_tab <- function(mod) {
   std.err <- sqrt(diag(cov.mod))
   
   r.est <- na.omit(cbind(estimate = coef(mod, complete = FALSE), 
-                         "robust SE" = std.err,
+                         "robust_SE" = std.err,
                          "Pr(>|z|)" = 2 * pnorm(abs(coef(mod, complete = FALSE)/std.err), lower.tail = FALSE),
                          LL = coef(mod, complete = FALSE) - 1.96 * std.err,
                          UL = coef(mod, complete = FALSE) + 1.96 * std.err))
@@ -182,9 +182,12 @@ rr_tab <- function(mod) {
   rexp.est <- exp(r.est[, -3])
   
   # Replace SEs with delta method estimates
-  rexp.est[, "robust SE"] <- s
+  rexp.est[, "robust_SE"] <- s
   
-  return(round(rexp.est, 3))
+  df <- data.frame(round(rexp.est, 3)) %>% 
+    rownames_to_column("covariate")
+  
+  return(df)
 }
 
 
@@ -219,12 +222,12 @@ plot_residuals <- function(df, resids, limits) {
 
 
 #grid of all seasons for supplementary text
-arrange_plots <- function(df, years, sigma, breaks, ylim, file) {
+arrange_plots <- function(df, years, sigma, breaks, labels, ylim, file) {
   df_filtered <- df %>% filter(year_recode %in% years)
   
   plot_list <- lapply(seq_along(years), function(idx) {
     i <- years[idx]
-    df_year <- df_filtered %>% filter(year_recode == i)
+    df_year <- filter(df_filtered, year_recode == i)
     
     y_label <- ifelse(idx %% 3 == 1, "Influenza deaths per 100,000", "")  # only on the left side
     
@@ -233,7 +236,7 @@ arrange_plots <- function(df, years, sigma, breaks, ylim, file) {
                   fill = "grey70") +
       geom_line(aes(x = birth_year, y = fitted_flu_mx_p100k), na.rm = TRUE) +
       geom_point(aes(x = birth_year, y = obs_flu_mx_p100k, color = imprinted_strain), 
-                 alpha = 0.6, size = 2.25, na.rm = TRUE) +
+                 alpha = 0.6, size = 2, na.rm = TRUE) +
       scale_color_manual(name = "Imprinted strain", 
                          values = c(pH1N1 = "#ff6698", H1N1_alpha = "#b70000", H1N1_beta = "#ff8900", 
                                     H1N1_gamma = "#ECC905", H2N2 = "#95C90F", H3N2 = "#3683C3", 
@@ -241,7 +244,7 @@ arrange_plots <- function(df, years, sigma, breaks, ylim, file) {
                          labels = c("mixed/naive" = "Mixed/Naïve", unknown = "Unknown",
                                     pH1N1 = bquote(pH1N1["\u03b1"]), H1N1_alpha = bquote(H1N1["\u03b1"]),
                                     H1N1_beta = bquote(H1N1["\u03b2"]), H1N1_gamma = bquote(H1N1["\u03b3"])),
-                         guide = guide_legend(ncol = 1)) +
+                         guide = guide_legend(ncol = 1, byrow = TRUE)) +
       labs(title = ifelse(i != 2008, paste0("‎ ", df_year$season[1], ", ", df_year$circulating_strain[1]), 
                           "‎ 2008-2009, H1N1*"),
            x = "Birth year", y = y_label) +
@@ -251,17 +254,17 @@ arrange_plots <- function(df, years, sigma, breaks, ylim, file) {
                                           labels = c(0, 20, 40, 60, 80, 100),
                                           name = "Age")) +
       scale_y_continuous(trans = pseudo_log_trans(base = 10, sigma = sigma),
-                         breaks = breaks) +
+                         breaks = breaks,
+                         labels = labels) +
       theme_bw() +
       theme(text = element_text(size=16, family = "Helvetica"),
-            plot.title = element_text(vjust = -16, size = 17),
+            plot.title = element_text(vjust = -16, size = 16),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
             panel.background = element_blank(),
             axis.title=element_text(size=14),
             legend.key.size = unit(0.7, "cm"),
             legend.text = element_text(size = 15),
             legend.title = element_text(size = 18),
-            #legend.box.spacing = unit(0, "cm"), 
             plot.margin = unit(c(-0.75,0.15,0.2,-0.6), "cm")) +
       guides(color = guide_legend(override.aes = list(size=2.5))) +
       coord_cartesian(ylim = ylim)
@@ -285,8 +288,8 @@ arrange_plots <- function(df, years, sigma, breaks, ylim, file) {
 
 
 
-fitted_plot <- function(data, year, x_breaks, sec_axis_name = "", xlab = "", ylab = "", 
-                        label_text, label_x, margin = c(0, 0, -0.5, 0)) {
+fitted_plot <- function(data, year, x_breaks, ylim, sec_axis_name = "", xlab = "", ylab = "", 
+                        label_text, label_x, label_y, margin = c(0, 0, -0.5, 0)) {
   data %>%
     filter(year_recode == year) %>%
     ggplot() +
@@ -298,24 +301,23 @@ fitted_plot <- function(data, year, x_breaks, sec_axis_name = "", xlab = "", yla
     scale_color_manual(name = "Imprinted strain", 
                        values = c(unknown = "gray35", pH1N1 = "#ff6698", H1N1_alpha = "#b70000", 
                                   H1N1_beta = "#ff8900", H1N1_gamma = "#ECC905", H2N2 = "#95C90F", 
-                                  H3N2 = "#3683C3", "mixed/naive" = "gray60"),
-      labels = c("unknown" = "Unknown", "mixed/naive" = "Mixed/Naïve", pH1N1 = bquote(pH1N1["\u03b1"]), 
-                 H1N1_alpha = bquote(H1N1["\u03b1"]), H1N1_beta = bquote(H1N1["\u03b2"]), 
-                 H1N1_gamma = bquote(H1N1["\u03b3"]))) +
+                                  H3N2 = "#3683C3", "mixed/naive" = "gray50"),
+                       labels = c("unknown" = "Unknown", "mixed/naive" = "Mixed/Naïve", pH1N1 = bquote(pH1N1["\u03b1"]), 
+                                  H1N1_alpha = bquote(H1N1["\u03b1"]), H1N1_beta = bquote(H1N1["\u03b2"]), 
+                                  H1N1_gamma = bquote(H1N1["\u03b3"]))) +
     scale_x_reverse(breaks = x_breaks,
                     sec.axis = sec_axis(transform = ~.,
                                         breaks = seq(year, year - 108, by = -20),
                                         labels = c(0, 20, 40, 60, 80, 100),
                                         name = sec_axis_name)) +
-    scale_y_continuous(trans = pseudo_log_trans(base = 10, sigma = 0.01),
-                       breaks = c(0, 0.1, 1, 10, 100),
-                       labels = c(0, 0.1, 1, 10, 100)) +
-    coord_cartesian(ylim = c(0, 500)) +
+    scale_y_log10(breaks = c(0.01, 0.1, 1, 10, 100),
+                  labels = c("0.01", "0.10", "1.00", "10.0", "100")) +
+    coord_cartesian(ylim = ylim) +
     labs(x = xlab, y = ylab) +
     theme_bw() +
     theme(text = element_text(size = 18, family = "Helvetica"),
           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(),
           plot.margin = unit(margin, "lines"), 
           axis.title = element_text(size = 14)) +
-    annotate("label", x = label_x, y = 90, label = label_text, size = 4.5)
+    annotate("label", x = label_x, y = label_y, label = label_text, size = 4.5)
 }

@@ -20,7 +20,7 @@ library(performance)
 library(marginaleffects)
 library(sandwich)
 library(msm)
-#library(RSA)
+library(StMoMo)
 library(splines)
 library(emmeans)
 ```
@@ -127,32 +127,152 @@ full model w/ splines is best
 
 
 ```{r}
+#mod_spline <- nb_model_data$model
+
 pred <- predict_response(mod_spline,
                  terms = c("circulating_strain", "imprinted_strain"),
+                 margin = "mean_reference",
                  ci_level = 0.95,
                  type = "count",
                  interval = "confidence",
-                 condition = c(total = 100000)) %>%
+                 weight = "cells", 
+                 condition = c(total = 100000)) 
+
+adjusts <- attributes(pred)$constant.values
+
+pred <- data.frame(pred) %>%
   dplyr::rename(circulating_strain = x, imprinted_strain = group) %>% 
-  data.frame() %>% 
   mutate(imprinted_strain = factor(imprinted_strain, 
                               levels = c("unknown", "pH1N1", "H1N1_alpha", "H1N1_beta", "H1N1_gamma", 
                                          "H2N2", "H3N2", "mixed")),
          circulating_strain = factor(circulating_strain,
                                      levels = c("B", "Ambiguous", "H3N2", "H1N1", "H1N1pdm09")))
+  
 ```
-
 
 
 ```{r}
 # incidence rate ratio table
 RR_tab <- rr_tab(mod_spline)
+
+RR_tab_clean <- RR_tab %>%
+  mutate(covariate = gsub(":", "*", covariate)) %>%
+  separate(covariate, into = c("part1", "part2"), sep = "\\*", fill = "right") %>%
+  mutate(part2 = ifelse(part2 == "", NA, part2)) %>%
+  pivot_longer(cols = c(part1, part2), names_to = "slot", values_to = "term") %>%
+  mutate(term_type = case_when(
+    grepl("^imprinted_strain", term) ~ "imprinted_strain",
+    grepl("^circulating_strain", term) ~ "circulating_strain",
+    grepl("^circ_exposure", term) ~ "circ_exposure",
+    TRUE ~ "other"
+  )) %>%
+  pivot_wider(names_from = term_type, values_from = term)
+
+```
+
+
+```{r}
+# pseudo-projection of H3N2 and H2N2 mortality 20 years from now
+
+# estimate mortality for H3N2 imprinted cohorts in an H1N1 year when they are older. 
+# set age = 65, season = a recent H1N1 season, circulating strain = H1N1pdm09, imprinted strain = H3N2. We can then compare this number to 65 year olds who have been imprinted with H1N1 and their mortality in an H1N1 year with age = 65
+
+projection_H1N1pdm09 <- predict_response(model,
+                 terms = c("circulating_strain", "imprinted_strain"),
+                 margin = "mean_reference",
+                 ci_level = 0.95,
+                 type = "count",
+                 interval = "confidence",
+                 weight = "cells", 
+                 condition = c(imprinted_strain = "H3N2", circulating_strain = "H1N1pdm09", 
+                               season = "2019-2020", age_recode = 65, total = 100000)) %>% 
+  data.frame() %>% 
+  dplyr::rename(circulating_strain = x, imprinted_strain = group) %>% 
+  filter(imprinted_strain == "H3N2" & circulating_strain == "H1N1pdm09") %>% 
+  rbind(predict_response(model,
+                 terms = c("circulating_strain", "imprinted_strain"),
+                 margin = "mean_reference",
+                 ci_level = 0.95,
+                 type = "count",
+                 interval = "confidence",
+                 weight = "cells", 
+                 condition = c(imprinted_strain = "H2N2", circulating_strain = "H1N1pdm09", 
+                               season = "2019-2020", age_recode = 65, total = 100000)) %>% 
+          data.frame() %>% 
+          dplyr::rename(circulating_strain = x, imprinted_strain = group) %>% 
+          filter(imprinted_strain == "H2N2" & circulating_strain == "H1N1pdm09")) %>% 
+  mutate(mean_observed = NA) %>% 
+  dplyr::select(imprinted_strain, mean_observed, predicted, conf.low, conf.high) %>% 
+  rbind(data %>% filter(str_detect(imprinted_strain, "H1N1") &
+                          circulating_strain == "H1N1pdm09" & 
+                          age_recode == 65 & year_recode >= 2009) %>% 
+          group_by(circulating_strain) %>% 
+          summarise(mean_observed = mean(flu_mx) * 100000,
+                    sd_mx = sd(flu_mx) * 100000,
+                    n = n()) %>% 
+          dplyr::mutate(conf.high = mean_observed + sd_mx/sqrt(n), 
+                        conf.low = mean_observed - sd_mx/sqrt(n),
+                        predicted = NA,
+                        imprinted_strain = "H1N1") %>%
+          dplyr::select(imprinted_strain, mean_observed, predicted, conf.low, conf.high))
+
+nb_model_data$projection_H1N1pdm09 <- projection_H1N1pdm09
+
+nb_model_data <- nb_model_data[-6]
 ```
 
 ```{r}
-nb_model_data <- list(model = mod_spline, predictions = pred, RR_table = RR_tab, AIC_table = aic.tab)
+#  pseudo-projection of H3N2 and H2N2 mortality 20 years from now if H1N1pdm09 never emerged
+projection_H1N1 <- predict_response(model,
+                 terms = c("circulating_strain", "imprinted_strain"),
+                 margin = "mean_reference",
+                 ci_level = 0.95,
+                 type = "count",
+                 interval = "confidence",
+                 weight = "cells", 
+                 condition = c(imprinted_strain = "H3N2", circulating_strain = "H1N1", 
+                               season = "2002-2003", age_recode = 65, total = 100000)) %>% 
+  data.frame() %>% 
+  dplyr::rename(circulating_strain = x, imprinted_strain = group) %>% 
+  filter(imprinted_strain == "H3N2" & circulating_strain == "H1N1") %>% 
+  rbind(predict_response(model,
+                 terms = c("circulating_strain", "imprinted_strain"),
+                 margin = "mean_reference",
+                 ci_level = 0.95,
+                 type = "count",
+                 interval = "confidence",
+                 weight = "cells", 
+                 condition = c(imprinted_strain = "H2N2", circulating_strain = "H1N1", 
+                               season = "2002-2003", age_recode = 65, total = 100000)) %>% 
+          data.frame() %>% 
+          dplyr::rename(circulating_strain = x, imprinted_strain = group) %>% 
+          filter(imprinted_strain == "H2N2" & circulating_strain == "H1N1")) %>% 
+  mutate(mean_observed = NA) %>% 
+  dplyr::select(imprinted_strain, mean_observed, predicted, conf.low, conf.high) %>% 
+  rbind(data %>% filter(str_detect(imprinted_strain, "H1N1") &
+                          circulating_strain == "H1N1" & 
+                          age_recode == 65 & year_recode < 2009) %>% 
+          group_by(circulating_strain) %>% 
+          summarise(mean_observed = mean(flu_mx) * 100000,
+                    sd_mx = sd(flu_mx) * 100000,
+                    n = n()) %>% 
+          dplyr::mutate(conf.high = mean_observed + sd_mx/sqrt(n), 
+                        conf.low = mean_observed - sd_mx/sqrt(n),
+                        predicted = NA,
+                        imprinted_strain = "H1N1") %>%
+  dplyr::select(imprinted_strain, mean_observed, predicted, conf.low, conf.high))
+```
+
+```{r}
+nb_model_data <- list(model = mod_spline, predictions = pred, adjusted_values = adjusts,
+                      RR_table = RR_tab, AIC_table = aic.tab, 
+                      projection_H1N1pdm09 = projection_H1N1pdm09)
 
 save(nb_model_data, file = "~/influenza-imprinting/influenza-imprinting-public/data/negbinom_model_data.RData")
 ```
+
+
+
+
 
 
